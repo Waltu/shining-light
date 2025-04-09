@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package ocppforwarder;
+
+option go_package = "github.com/waltu/shining-light/proto/ocppforwarder";
+
+// Enum defining action listener should take based on server processing
+enum ResponseAction {
+  DO_NOTHING = 0;     // Server handled it, no OCPP response needed from listener
+  SEND_RESPONSE = 1;  // Send the included response_payload back as CallResult
+  // Maybe add ERROR_RESPONSE later?
+}
+
+// Result of a command sent to a charger
+message CommandResult {
+  string charge_point_id = 1;   // ID of the charger responding
+  string original_message_id = 2; // Message ID of the original SendCommand request
+  bool success = 3;             // True if CallResult received, false if CallError or timeout
+  bytes response_payload = 4;  // The JSON payload from the CallResult (if success=true)
+  // Fields for CallError details (if success=false)
+  string error_code = 5;         // e.g., "GenericError"
+  string error_description = 6;
+  bytes error_details = 7;      // JSON object
+}
+
+// Response to the notification
+message NotificationResponse {
+  bool acknowledged = 1;
+}
+
+// The service definition.
+service OcppForwarder {
+  // Forwards a raw OCPP message and gets potential response payload back
+  rpc ForwardMessage (OcppMessage) returns (ForwardResponse) {}
+  
+  // Notifies the server about the result of a command sent FROM server TO charger
+  rpc NotifyCommandResult (CommandResult) returns (NotificationResponse) {}
+}
+
+// The request message containing the raw OCPP message bytes.
+message OcppMessage {
+  string charge_point_id = 1; // Identifier of the originating charge point (e.g., from connection context)
+  string message_id = 2;      // Original MessageId from OCPP message (needed for CallResult)
+  bytes raw_message = 3;      // The original OCPP JSON message as bytes
+}
+
+// The response message indicating success/failure and potential response payload.
+message ForwardResponse {
+  bool processed_successfully = 1; // Did the server process the request without internal error?
+  ResponseAction response_action = 2; // What should the listener do?
+  bytes response_payload = 3;     // The JSON payload to send back in the CallResult (if response_action=SEND_RESPONSE)
+  string error_message = 4;        // Optional message (e.g., server processing error details)
+} 

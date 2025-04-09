@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package chargercommander;
+
+option go_package = "github.com/waltu/shining-light/proto/chargercommander";
+
+// Service definition for sending commands to a specific charger via the listener
+service ChargerCommander {
+  // Sends a command (as an OCPP Call message payload) to a specific charger
+  rpc SendCommand (SendCommandRequest) returns (SendCommandResponse) {}
+  // TODO: Add method to get connected charger IDs?
+}
+
+// Request to send a command
+message SendCommandRequest {
+  string charge_point_id = 1; // ID of the target charger
+  string message_id = 2;      // Unique message ID for the OCPP Call message to be sent
+  string action = 3;          // The OCPP action name (e.g., "RemoteStartTransaction")
+  bytes request_payload = 4; // The JSON payload for the OCPP action
+}
+
+// Response from sending a command
+message SendCommandResponse {
+  bool success = 1;         // Did the listener successfully find the connection and send the command?
+  string error_message = 2; // Error details if success is false (e.g., "Charger not connected")
+  // Note: This only confirms *sending*. It doesn't include the charger's OCPP response.
+  // Handling the charger's response (CallResult/CallError) requires more complex async handling.
+} 
