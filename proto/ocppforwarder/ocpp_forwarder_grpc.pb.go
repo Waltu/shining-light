@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.3
-// source: ocpp-16-json/proto/ocpp_forwarder.proto
+// source: ocpp_forwarder.proto
 
 package ocppforwarder
 
@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	OcppForwarder_ForwardMessage_FullMethodName = "/ocppforwarder.OcppForwarder/ForwardMessage"
+	OcppForwarder_ForwardMessage_FullMethodName      = "/ocppforwarder.OcppForwarder/ForwardMessage"
+	OcppForwarder_NotifyCommandResult_FullMethodName = "/ocppforwarder.OcppForwarder/NotifyCommandResult"
 )
 
 // OcppForwarderClient is the client API for OcppForwarder service.
@@ -28,8 +29,10 @@ const (
 //
 // The service definition.
 type OcppForwarderClient interface {
-	// Forwards a raw OCPP message
+	// Forwards a raw OCPP message and gets potential response payload back
 	ForwardMessage(ctx context.Context, in *OcppMessage, opts ...grpc.CallOption) (*ForwardResponse, error)
+	// Notifies the server about the result of a command sent FROM server TO charger
+	NotifyCommandResult(ctx context.Context, in *CommandResult, opts ...grpc.CallOption) (*NotificationResponse, error)
 }
 
 type ocppForwarderClient struct {
@@ -50,14 +53,26 @@ func (c *ocppForwarderClient) ForwardMessage(ctx context.Context, in *OcppMessag
 	return out, nil
 }
 
+func (c *ocppForwarderClient) NotifyCommandResult(ctx context.Context, in *CommandResult, opts ...grpc.CallOption) (*NotificationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NotificationResponse)
+	err := c.cc.Invoke(ctx, OcppForwarder_NotifyCommandResult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OcppForwarderServer is the server API for OcppForwarder service.
 // All implementations must embed UnimplementedOcppForwarderServer
 // for forward compatibility.
 //
 // The service definition.
 type OcppForwarderServer interface {
-	// Forwards a raw OCPP message
+	// Forwards a raw OCPP message and gets potential response payload back
 	ForwardMessage(context.Context, *OcppMessage) (*ForwardResponse, error)
+	// Notifies the server about the result of a command sent FROM server TO charger
+	NotifyCommandResult(context.Context, *CommandResult) (*NotificationResponse, error)
 	mustEmbedUnimplementedOcppForwarderServer()
 }
 
@@ -70,6 +85,9 @@ type UnimplementedOcppForwarderServer struct{}
 
 func (UnimplementedOcppForwarderServer) ForwardMessage(context.Context, *OcppMessage) (*ForwardResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ForwardMessage not implemented")
+}
+func (UnimplementedOcppForwarderServer) NotifyCommandResult(context.Context, *CommandResult) (*NotificationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NotifyCommandResult not implemented")
 }
 func (UnimplementedOcppForwarderServer) mustEmbedUnimplementedOcppForwarderServer() {}
 func (UnimplementedOcppForwarderServer) testEmbeddedByValue()                       {}
@@ -110,6 +128,24 @@ func _OcppForwarder_ForwardMessage_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _OcppForwarder_NotifyCommandResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CommandResult)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcppForwarderServer).NotifyCommandResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OcppForwarder_NotifyCommandResult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcppForwarderServer).NotifyCommandResult(ctx, req.(*CommandResult))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OcppForwarder_ServiceDesc is the grpc.ServiceDesc for OcppForwarder service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -121,7 +157,11 @@ var OcppForwarder_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ForwardMessage",
 			Handler:    _OcppForwarder_ForwardMessage_Handler,
 		},
+		{
+			MethodName: "NotifyCommandResult",
+			Handler:    _OcppForwarder_NotifyCommandResult_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "ocpp-16-json/proto/ocpp_forwarder.proto",
+	Metadata: "ocpp_forwarder.proto",
 }
