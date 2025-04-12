@@ -117,25 +117,39 @@ func (s *server) ForwardMessage(ctx context.Context, in *forwarderPb.OcppMessage
 				errorMessage = "Failed to unmarshal StartTransaction payload"
 				responseAction = forwarderPb.ResponseAction_DO_NOTHING
 			} else {
-				tempTransactionId := 12345 // TODO: Generate real ID!
-				log.Printf("Handling StartTransaction for %s: Tag=%s, Meter=%d (Temp ID: %d)", in.ChargePointId, req.IdTag, req.MeterStart, tempTransactionId)
-				// Redis logic using tempTransactionId ...
-				transactionKey := fmt.Sprintf("transaction:%d", tempTransactionId)
-				rdsErr := rdb.HSet(ctx, transactionKey, "chargerId", in.ChargePointId, "idTag", req.IdTag, "meterStart", req.MeterStart, "startTimestamp", req.Timestamp, "status", "InProgress", "connectorId", req.ConnectorId).Err()
+				// --- Generate Transaction ID using Redis HINCRBY ---
+				// chargerKey should already be defined from the start of ForwardMessage
+				newTransactionID64, rdsErr := rdb.HIncrBy(ctx, chargerKey, "lastTransactionId", 1).Result()
+				if rdsErr != nil {
+					log.Printf("ERROR: Failed to increment transaction ID in Redis for %s: %v", chargerKey, rdsErr)
+					// Fail the operation as we couldn't get a valid transaction ID
+					processedSuccessfully = false
+					errorMessage = "Internal server error (Redis transaction ID generation failed)"
+					responseAction = forwarderPb.ResponseAction_DO_NOTHING
+					// Exit this case block since we failed critical step
+					break
+				}
+				newTransactionID := int(newTransactionID64) // Convert from int64 returned by HIncrBy
+				// --- End Transaction ID Generation ---
+
+				log.Printf("Handling StartTransaction for %s: Tag=%s, Meter=%d. Assigning TransactionID: %d", in.ChargePointId, req.IdTag, req.MeterStart, newTransactionID)
+				// Redis logic using the generated newTransactionID ...
+				transactionKey := fmt.Sprintf("transaction:%d", newTransactionID)
+				rdsErr = rdb.HSet(ctx, transactionKey, "chargerId", in.ChargePointId, "idTag", req.IdTag, "meterStart", req.MeterStart, "startTimestamp", req.Timestamp, "status", "InProgress", "connectorId", req.ConnectorId).Err()
 				if rdsErr != nil {
 					log.Printf("ERROR: Failed to create Redis transaction %s: %v", transactionKey, rdsErr)
 					processedSuccessfully = false
 				}
-				rdsErr = rdb.HSet(ctx, chargerKey, "status", "Charging", "currentTransaction", tempTransactionId).Err()
+				rdsErr = rdb.HSet(ctx, chargerKey, "status", "Charging", "currentTransaction", newTransactionID).Err()
 				if rdsErr != nil {
 					log.Printf("ERROR: Failed to update charger status for %s: %v", chargerKey, rdsErr)
 					processedSuccessfully = false
 				}
 
-				// Prepare response
+				// Prepare response using the generated newTransactionID
 				responsePayloadStruct = ocpp.StartTransactionConf{
 					IdTagInfo:     ocpp.IdTagInfo{Status: ocpp.AuthorizationStatusAccepted},
-					TransactionId: tempTransactionId,
+					TransactionId: newTransactionID,
 				}
 			}
 		case "StopTransaction":
@@ -149,12 +163,12 @@ func (s *server) ForwardMessage(ctx context.Context, in *forwarderPb.OcppMessage
 				log.Printf("Handling StopTransaction for %s: ID=%d, Meter=%d, Reason=%s", in.ChargePointId, req.TransactionId, req.MeterStop, req.Reason)
 				// Redis logic using req ...
 				transactionKeyToStop := fmt.Sprintf("transaction:%d", req.TransactionId)
-				rdsErr := rdb.HSet(ctx, transactionKeyToStop, "meterStop", req.MeterStop, "stopTimestamp", req.Timestamp, "stopReason", req.Reason, "status", "Completed").Err()
+				rdsErr := rdb.HSet(ctx, transactionKeyToStop, "meterStop", req.MeterStop, "stopTimestamp", req.Timestamp, "stopReason", req.Reason, "status", "Completed", "updatedAt", time.Now().UTC().Format(time.RFC3339Nano)).Err()
 				if rdsErr != nil {
 					log.Printf("ERROR: Failed to update Redis transaction %s: %v", transactionKeyToStop, rdsErr)
 					processedSuccessfully = false
 				}
-				rdsErr = rdb.HSet(ctx, chargerKey, "status", "Available", "currentTransaction", "").Err()
+				rdsErr = rdb.HSet(ctx, chargerKey, "status", "Available", "currentTransaction", "", "updatedAt", time.Now().UTC().Format(time.RFC3339Nano)).Err()
 				if rdsErr != nil {
 					log.Printf("ERROR: Failed to update charger status for %s: %v", chargerKey, rdsErr)
 					processedSuccessfully = false
